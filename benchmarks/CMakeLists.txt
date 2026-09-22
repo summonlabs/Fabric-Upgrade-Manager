@@ -1,0 +1,3 @@
+add_executable(fum_bench_upgrade bench_upgrade.cpp)
+target_link_libraries(fum_bench_upgrade PRIVATE fum_core fum_synthetic fum_warnings)
+target_include_directories(fum_bench_upgrade PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")

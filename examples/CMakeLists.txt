@@ -1,0 +1,7 @@
+add_executable(fum_example_rolling_upgrade rolling_upgrade.cpp)
+target_link_libraries(fum_example_rolling_upgrade PRIVATE fum_core fum_synthetic fum_warnings)
+target_include_directories(fum_example_rolling_upgrade PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+
+add_executable(fum_example_custom_adapter custom_adapter.cpp)
+target_link_libraries(fum_example_custom_adapter PRIVATE fum_core fum_synthetic fum_warnings)
+target_include_directories(fum_example_custom_adapter PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
