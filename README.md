@@ -1,7 +1,6 @@
 # Fabric Upgrade Manager
 
-Vendor-neutral **Fabric OS upgrade intent and execution lifecycle runtime** from
-Summon Software Labs.
+Vendor-neutral **upgrade intent and execution lifecycle runtime**.
 
 Fabric Upgrade Manager (FUM) owns *upgrade intent and execution lifecycle* for
 software, firmware and control-plane components: what is being upgraded, against
