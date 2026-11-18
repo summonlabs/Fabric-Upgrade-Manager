@@ -48,10 +48,12 @@ if(MSVC)
   target_compile_definitions(fum_warnings INTERFACE
     _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00)
   if(FUM_ENABLE_ASAN)
-    target_compile_options(fum_warnings INTERFACE /fsanitize=address)
+    # Debug information is required: without it MSVC warns C5072 for every
+    # source, which FUM_WARNINGS_AS_ERRORS turns into an error.
+    target_compile_options(fum_warnings INTERFACE /fsanitize=address /Zi)
     target_compile_definitions(fum_warnings INTERFACE
       _DISABLE_VECTOR_ANNOTATION _DISABLE_STRING_ANNOTATION)
-    target_link_options(fum_warnings INTERFACE /INCREMENTAL:NO)
+    target_link_options(fum_warnings INTERFACE /INCREMENTAL:NO /DEBUG)
   endif()
 else()
   target_compile_options(fum_warnings INTERFACE

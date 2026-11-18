@@ -1,5 +1,7 @@
 // Concurrency: real threads, bounded queues, cancellation and shutdown.
 #include <atomic>
+#include <chrono>
+#include <exception>
 #include <future>
 #include <thread>
 #include <vector>
@@ -242,6 +244,46 @@ FUM_TEST(many_sequential_campaigns_keep_the_store_consistent) {
   FUM_CHECK(verify_ledger(records.value()).valid);
   FUM_CHECK_EQ(harness->engine().recovery().rejected_records, std::size_t{0});
   FUM_REQUIRE_OK(harness->engine().shutdown());
+}
+
+FUM_TEST(concurrent_stops_join_each_worker_once) {
+  WorkerPool::Options options;
+  options.threads = 1;
+  options.max_queue = 2;
+  WorkerPool pool(options);
+  std::promise<void> release;
+  const std::shared_future<void> released = release.get_future().share();
+  std::atomic<bool> started{false};
+  FUM_REQUIRE_OK(pool.submit([&started, released] {
+    started.store(true);
+    released.wait();
+  }));
+  // A bounded wait for the worker to take the task, not a pass condition.
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  while (!started.load() && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  // Two threads stop the pool while its worker is still busy, so both stops
+  // are in flight at once.
+  std::atomic<int> failed{0};
+  const auto stopper = [&pool, &failed] {
+    try {
+      pool.stop();
+    } catch (const std::exception&) {
+      failed.fetch_add(1);
+    }
+  };
+  std::thread first(stopper);
+  std::thread second(stopper);
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  release.set_value();
+  first.join();
+  second.join();
+  FUM_CHECK(started.load());
+  // The stop that found the pool already stopping joined the worker as well,
+  // so two threads joined one thread and one of the joins failed.
+  FUM_CHECK_EQ(failed.load(), 0);
+  FUM_CHECK(pool.stopped());
 }
 
 int main(int argc, char** argv) { return fumtest::run_all(argc, argv); }

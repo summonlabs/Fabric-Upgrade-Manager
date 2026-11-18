@@ -470,4 +470,14 @@ FUM_TEST(local_process_rollback_restores_the_previous_build) {
   FUM_REQUIRE_OK(fixture->engine->shutdown());
 }
 
+FUM_TEST(local_process_a_second_listener_cannot_take_a_listening_port) {
+  auto first = net::TcpListener::bind_loopback(0);
+  FUM_CHECK(first.has_value());
+  const std::uint16_t port = first.value().port();
+  FUM_CHECK(port != 0);
+  auto second = net::TcpListener::bind_loopback(port);
+  // Two managers must never share one listening port: the second bind fails.
+  FUM_CHECK(!second.has_value());
+}
+
 int main(int argc, char** argv) { return fumtest::run_all(argc, argv); }

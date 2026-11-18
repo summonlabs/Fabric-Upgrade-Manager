@@ -115,16 +115,27 @@ void WorkerPool::stop() {
   if (stopped_.load()) {
     return;
   }
+  bool joining = false;
   {
     const std::lock_guard<std::mutex> lock(mutex_);
-    if (stopping_) {
-      // Another thread is already stopping; wait for the workers to finish.
-    } else {
+    if (!stopping_) {
       stopping_ = true;
+      joining = true;
       cancel_requested_.store(true);
       stats_.discarded += queue_.size();
       queue_.clear();
     }
+  }
+  if (!joining) {
+    // Another thread is already stopping and joins the workers; joining them
+    // here as well joined each worker from two threads at once. Wait for it
+    // instead. A pool thread does not wait: the stopping thread joins it.
+    if (is_pool_thread()) {
+      return;
+    }
+    std::unique_lock<std::mutex> lock(mutex_);
+    stopped_cv_.wait(lock, [this] { return stopped_.load(); });
+    return;
   }
   work_available_.notify_all();
   for (auto& worker : workers_) {
@@ -136,7 +147,11 @@ void WorkerPool::stop() {
       worker.join();
     }
   }
-  stopped_.store(true);
+  {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    stopped_.store(true);
+  }
+  stopped_cv_.notify_all();
 }
 
 std::size_t WorkerPool::pending() const {

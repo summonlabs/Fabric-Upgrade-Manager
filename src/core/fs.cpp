@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <system_error>
+#include <thread>
 
 #include "fum/core/checked.hpp"
 
@@ -170,12 +172,28 @@ Status replace_file(std::string_view from, std::string_view to) {
 #if defined(_WIN32)
   const std::wstring wfrom = std::filesystem::path(std::string(from)).wstring();
   const std::wstring wto = std::filesystem::path(std::string(to)).wstring();
-  if (!::MoveFileExW(wfrom.c_str(), wto.c_str(),
-                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-    return make_error(ErrorCode::io_error, "could not atomically replace file",
-                      std::string(to));
+  // While a reader has the target open (an inspection, an antivirus or
+  // indexing scan) the replacement fails until the reader closes the file, so
+  // it is retried for a bounded time (about 2 s). A directory in the way is
+  // not transient and fails at once.
+  for (int attempt = 0;; ++attempt) {
+    if (::MoveFileExW(wfrom.c_str(), wto.c_str(),
+                      MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+      return ok_status();
+    }
+    const DWORD error = ::GetLastError();
+    const DWORD attributes = ::GetFileAttributesW(wto.c_str());
+    const bool directory =
+        attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    const bool transient = (error == ERROR_ACCESS_DENIED || error == ERROR_SHARING_VIOLATION ||
+                            error == ERROR_LOCK_VIOLATION) &&
+                           !directory;
+    if (!transient || attempt >= 100) {
+      return make_error(ErrorCode::io_error, "could not atomically replace file",
+                        std::string(to));
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
   }
-  return ok_status();
 #else
   std::error_code ec;
   std::filesystem::rename(std::filesystem::path(std::string(from)),

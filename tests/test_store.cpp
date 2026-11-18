@@ -1,3 +1,7 @@
+#include <chrono>
+#include <fstream>
+#include <thread>
+
 #include "test_support.hpp"
 
 #include "fum/store/journal.hpp"
@@ -370,6 +374,34 @@ FUM_TEST(store_bounds_are_enforced) {
   FUM_CHECK(decisions != nullptr);
   FUM_CHECK_EQ(decisions->size(), std::size_t{2});
   FUM_REQUIRE_OK(store.value().close());
+}
+
+FUM_TEST(atomic_file_replacement_waits_for_a_reader_of_the_target) {
+  auto directory = fs::TempDir::create("fum-replace-reader");
+  FUM_CHECK(directory.has_value());
+  fs::TempDir guard = std::move(directory).value();
+  const std::string path = fs::join(guard.path(), "pointer.json");
+  FUM_REQUIRE_OK(fs::write_file_atomic(path, "first"));
+  bool reader_opened = false;
+  bool replaced = false;
+  {
+    // Another process reading the file (the managed runtime reading its
+    // pointer, an antivirus or indexing scan) holds it open while it is
+    // replaced, and closes it shortly after.
+    std::ifstream reader(path, std::ios::binary);
+    reader_opened = reader.is_open();
+    std::thread writer([&path, &replaced] { replaced = fs::write_file_atomic(path, "second").has_value(); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    reader.close();
+    writer.join();
+  }
+  FUM_CHECK(reader_opened);
+  // The replacement waits for the reader instead of failing. The journal
+  // compaction replaces the journal the same way.
+  FUM_CHECK(replaced);
+  auto text = fs::read_file(path);
+  FUM_CHECK(text.has_value());
+  FUM_CHECK_EQ(text.value(), std::string("second"));
 }
 
 int main(int argc, char** argv) { return fumtest::run_all(argc, argv); }

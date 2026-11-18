@@ -64,6 +64,7 @@ class [[nodiscard]] WorkerPool {
   mutable std::mutex mutex_;
   std::condition_variable work_available_;
   std::condition_variable idle_;
+  std::condition_variable stopped_cv_;
   std::deque<std::function<void()>> queue_;
   std::vector<std::thread> workers_;
   std::vector<std::thread::id> worker_ids_;
